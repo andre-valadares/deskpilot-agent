@@ -4,39 +4,46 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 )
 
 func reportState(cfg *Config, state string) error {
+	url := cfg.ApiURL + "/api/agent"
+	log.Printf("reportState: POST %s state=%s", url, state)
 	body := fmt.Sprintf(`{"token":%q,"state":%q}`, cfg.Token, state)
-	resp, err := http.Post(cfg.ApiURL+"/api/agent", "application/json", strings.NewReader(body))
+	resp, err := http.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
-		return err
+		return fmt.Errorf("reportState: %w", err)
 	}
 	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("reportState: status %d — %s", resp.StatusCode, b)
 	}
+	log.Printf("reportState: resposta %d", resp.StatusCode)
 	return nil
 }
 
 func readCommand(cfg *Config) (string, error) {
-	resp, err := http.Get(cfg.ApiURL + "/api/agent?token=" + cfg.Token)
+	url := cfg.ApiURL + "/api/agent?token=" + cfg.Token
+	log.Printf("readCommand: GET %s", url)
+	resp, err := http.Get(url)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("readCommand: %w", err)
 	}
 	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("readCommand: status %d — %s", resp.StatusCode, b)
 	}
+	log.Printf("readCommand: resposta %d body=%s", resp.StatusCode, strings.TrimSpace(string(b)))
 	var result struct {
 		PendingCommand *string `json:"pendingCommand"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
+	if err := json.Unmarshal(b, &result); err != nil {
+		return "", fmt.Errorf("readCommand: decode: %w", err)
 	}
 	if result.PendingCommand == nil {
 		return "", nil

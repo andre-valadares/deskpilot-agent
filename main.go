@@ -45,6 +45,8 @@ func main() {
 		setupFileLogging()
 	}
 
+	log.Printf("config carregada: api=%s debug=%v", cfg.ApiURL, cfg.Debug)
+
 	macs, err := ownMACAddresses()
 	if err != nil {
 		log.Fatalf("erro ao obter MACs locais: %v", err)
@@ -53,6 +55,8 @@ func main() {
 
 	if err := reportState(cfg, "ON"); err != nil {
 		log.Printf("aviso: reportState ON falhou: %v", err)
+	} else {
+		log.Println("reportState ON: OK")
 	}
 
 	sigs := make(chan os.Signal, 1)
@@ -73,22 +77,25 @@ func main() {
 
 	buf := make([]byte, 102)
 	for {
-		n, _, err := conn.ReadFrom(buf)
+		n, addr, err := conn.ReadFrom(buf)
 		if err != nil {
 			log.Printf("erro lendo UDP: %v", err)
 			continue
 		}
 		if n < 102 {
+			log.Printf("pacote UDP de %s ignorado — tamanho %d < 102 bytes", addr, n)
 			continue
 		}
 		mac := extractMACFromWoL(buf[:n])
 		if mac == "" {
+			log.Printf("pacote UDP de %s ignorado — não é magic packet válido", addr)
 			continue
 		}
 		if !containsMAC(macs, mac) {
+			log.Printf("WoL de %s ignorado — MAC alvo %s não pertence a este host", addr, mac)
 			continue
 		}
-		log.Printf("WoL recebido para %s", mac)
+		log.Printf("WoL recebido de %s para %s", addr, mac)
 		go handleWoL(cfg)
 	}
 }
@@ -100,13 +107,24 @@ func handleWoL(cfg *Config) {
 		return
 	}
 	log.Printf("pendingCommand: %q", cmd)
-	if cmd == "TurnOff" {
+
+	switch cmd {
+	case "":
+		log.Println("nenhum comando pendente — WoL ignorado")
+	case "TurnOff":
 		log.Println("executando shutdown...")
 		if err := shutdown(); err != nil {
 			log.Printf("erro no shutdown: %v", err)
 			return
 		}
-		_ = reportState(cfg, "OFF")
+		log.Println("shutdown iniciado com sucesso")
+		if err := reportState(cfg, "OFF"); err != nil {
+			log.Printf("erro ao reportar OFF: %v", err)
+		} else {
+			log.Println("reportState OFF: OK")
+		}
+	default:
+		log.Printf("comando desconhecido %q — ignorado", cmd)
 	}
 }
 
