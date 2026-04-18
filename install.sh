@@ -3,7 +3,7 @@ set -euo pipefail
 
 TOKEN=""
 API_URL=""
-BINARY_URL=""  # preenchido em cada release via GoReleaser
+BINARY_URL="https://github.com/andre-valadares/deskpilot-agent/releases/latest/download"
 
 usage() {
   echo "Uso: bash install.sh --token=<token> --api=<url>"

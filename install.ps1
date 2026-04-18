@@ -17,8 +17,8 @@ if (-not (Test-Path $InstallDir)) {
   New-Item -ItemType Directory -Path $InstallDir | Out-Null
 }
 
-# Baixar binário pré-compilado (substituir URL quando releases estiverem disponíveis)
-$ReleaseUrl = ""  # e.g. "https://github.com/deskpilot/agent/releases/latest/download/deskpilot-agent-windows-amd64.exe"
+# Baixar binário pré-compilado
+$ReleaseUrl = "https://github.com/andre-valadares/deskpilot-agent/releases/latest/download/deskpilot-agent_windows_amd64.zip"
 if ($ReleaseUrl) {
   Invoke-WebRequest -Uri $ReleaseUrl -OutFile $BinaryPath
 } else {
