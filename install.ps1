@@ -2,7 +2,7 @@
 param(
   [Parameter(Mandatory)][string]$Token,
   [Parameter(Mandatory)][string]$Api,
-  [switch]$Debug
+  [switch]$FileLog
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,7 +34,7 @@ Remove-Item $TmpZip, $TmpDir -Recurse -Force
 
 # Salvar configuração
 $installArgs = @("--token=$Token", "--api=$Api", "--install")
-if ($Debug) { $installArgs += "--debug" }
+if ($FileLog) { $installArgs += "--debug" }
 & $BinaryPath @installArgs
 
 # Regra de firewall — permite receber WoL (UDP porta 9) apenas para este binário
