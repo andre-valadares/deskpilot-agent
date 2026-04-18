@@ -12,6 +12,11 @@ type Config struct {
 }
 
 func configPath() string {
+	// ProgramData é acessível por todos os usuários incluindo SYSTEM
+	programData := os.Getenv("ProgramData")
+	if programData != "" {
+		return filepath.Join(programData, "DeskPilot", "config.json")
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".deskpilot", "config.json")
 }
