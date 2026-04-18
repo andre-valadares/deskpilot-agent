@@ -59,6 +59,34 @@ chmod +x "$BINARY"
 # Salvar configuração
 "$BINARY" --token="$TOKEN" --api="$API_URL" --install
 
+# Regra de firewall — permite receber WoL (UDP porta 9)
+configure_firewall() {
+  if [[ "$OS" == "Darwin" ]]; then
+    local fw="/usr/libexec/ApplicationFirewall/socketfilterfw"
+    if $fw --getglobalstate 2>/dev/null | grep -q "enabled"; then
+      sudo "$fw" --add "$BINARY" 2>/dev/null || true
+      sudo "$fw" --unblockapp "$BINARY" 2>/dev/null || true
+      echo "Firewall macOS: exceção adicionada para o agente."
+    fi
+  else
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "active"; then
+      sudo ufw allow 9/udp comment "DeskPilot Agent" >/dev/null
+      echo "ufw: porta 9/udp liberada."
+    elif command -v firewall-cmd &>/dev/null && firewall-cmd --state 2>/dev/null | grep -q "running"; then
+      sudo firewall-cmd --permanent --add-port=9/udp >/dev/null
+      sudo firewall-cmd --reload >/dev/null
+      echo "firewalld: porta 9/udp liberada."
+    elif command -v iptables &>/dev/null; then
+      sudo iptables -C INPUT -p udp --dport 9 -j ACCEPT 2>/dev/null || \
+        sudo iptables -I INPUT -p udp --dport 9 -j ACCEPT
+      echo "iptables: porta 9/udp liberada."
+    else
+      echo "Aviso: firewall não detectado. Verifique manualmente se UDP porta 9 está liberada."
+    fi
+  fi
+}
+configure_firewall
+
 # Registrar como serviço
 if [[ "$OS" == "Darwin" ]]; then
   PLIST="$HOME/Library/LaunchAgents/com.deskpilot.agent.plist"

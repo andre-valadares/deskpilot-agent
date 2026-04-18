@@ -34,6 +34,10 @@ Remove-Item $TmpZip, $TmpDir -Recurse -Force
 # Salvar configuração
 & $BinaryPath --token=$Token --api=$Api --install
 
+# Regra de firewall — permite receber WoL (UDP porta 9) apenas para este binário
+Remove-NetFirewallRule -DisplayName "DeskPilot Agent" -ErrorAction SilentlyContinue
+New-NetFirewallRule -DisplayName "DeskPilot Agent" -Direction Inbound -Program $BinaryPath -Protocol UDP -LocalPort 9 -Action Allow | Out-Null
+
 # Registrar no Task Scheduler para rodar na inicialização como SYSTEM
 $action  = New-ScheduledTaskAction -Execute $BinaryPath
 $trigger = New-ScheduledTaskTrigger -AtStartup
