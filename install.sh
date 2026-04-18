@@ -3,10 +3,11 @@ set -euo pipefail
 
 TOKEN=""
 API_URL=""
+DEBUG=""
 BINARY_URL="https://github.com/andre-valadares/deskpilot-agent/releases/latest/download"
 
 usage() {
-  echo "Uso: bash install.sh --token=<token> --api=<url>"
+  echo "Uso: bash install.sh --token=<token> --api=<url> [--debug]"
   exit 1
 }
 
@@ -14,6 +15,7 @@ for arg in "$@"; do
   case $arg in
     --token=*) TOKEN="${arg#*=}" ;;
     --api=*)   API_URL="${arg#*=}" ;;
+    --debug)   DEBUG="--debug" ;;
     *) usage ;;
   esac
 done
@@ -57,7 +59,7 @@ fi
 chmod +x "$BINARY"
 
 # Salvar configuração
-"$BINARY" --token="$TOKEN" --api="$API_URL" --install
+"$BINARY" --token="$TOKEN" --api="$API_URL" --install $DEBUG
 
 # Regra de firewall — permite receber WoL (UDP porta 9)
 configure_firewall() {

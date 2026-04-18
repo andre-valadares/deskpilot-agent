@@ -9,6 +9,7 @@ import (
 type Config struct {
 	Token  string `json:"token"`
 	ApiURL string `json:"apiUrl"`
+	Debug  bool   `json:"debug,omitempty"`
 }
 
 func configPath() string {

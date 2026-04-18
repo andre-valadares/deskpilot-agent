@@ -1,7 +1,8 @@
 #Requires -RunAsAdministrator
 param(
   [Parameter(Mandatory)][string]$Token,
-  [Parameter(Mandatory)][string]$Api
+  [Parameter(Mandatory)][string]$Api,
+  [switch]$Debug
 )
 
 $ErrorActionPreference = "Stop"
@@ -32,7 +33,9 @@ Copy-Item "$TmpDir\deskpilot-agent.exe" -Destination $BinaryPath -Force
 Remove-Item $TmpZip, $TmpDir -Recurse -Force
 
 # Salvar configuração
-& $BinaryPath --token=$Token --api=$Api --install
+$installArgs = @("--token=$Token", "--api=$Api", "--install")
+if ($Debug) { $installArgs += "--debug" }
+& $BinaryPath @installArgs
 
 # Regra de firewall — permite receber WoL (UDP porta 9) apenas para este binário
 Remove-NetFirewallRule -DisplayName "DeskPilot Agent" -ErrorAction SilentlyContinue

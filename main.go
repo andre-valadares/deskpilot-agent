@@ -4,11 +4,13 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"syscall"
@@ -18,13 +20,14 @@ func main() {
 	token := flag.String("token", "", "agent token")
 	apiURL := flag.String("api", "", "DeskPilot API URL (e.g. https://wol.deskpilot.xyz)")
 	install := flag.Bool("install", false, "save config and register as system service")
+	debug := flag.Bool("debug", false, "enable file logging (persisted in config)")
 	flag.Parse()
 
 	if *install {
 		if *token == "" || *apiURL == "" {
 			log.Fatal("--token e --api são obrigatórios para --install")
 		}
-		cfg := &Config{Token: *token, ApiURL: strings.TrimRight(*apiURL, "/")}
+		cfg := &Config{Token: *token, ApiURL: strings.TrimRight(*apiURL, "/"), Debug: *debug}
 		if err := SaveConfig(cfg); err != nil {
 			log.Fatalf("erro ao salvar config: %v", err)
 		}
@@ -36,6 +39,10 @@ func main() {
 	cfg, err := LoadConfig()
 	if err != nil {
 		log.Fatalf("config não encontrada — rode com --token e --api --install primeiro: %v", err)
+	}
+
+	if cfg.Debug {
+		setupFileLogging()
 	}
 
 	macs, err := ownMACAddresses()
@@ -97,6 +104,7 @@ func handleWoL(cfg *Config) {
 		log.Println("executando shutdown...")
 		if err := shutdown(); err != nil {
 			log.Printf("erro no shutdown: %v", err)
+			return
 		}
 		_ = reportState(cfg, "OFF")
 	}
@@ -106,11 +114,38 @@ func shutdown() error {
 	var c *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		c = exec.Command("shutdown", "/s", "/t", "0")
+		c = exec.Command(`C:\Windows\System32\shutdown.exe`, "/s", "/t", "0")
 	default:
 		c = exec.Command("shutdown", "-h", "now")
 	}
-	return c.Run()
+	out, err := c.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w; output: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func logPath() string {
+	programData := os.Getenv("ProgramData")
+	if programData != "" {
+		return filepath.Join(programData, "DeskPilot", "agent.log")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".deskpilot", "agent.log")
+}
+
+func setupFileLogging() {
+	path := logPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+	log.Printf("log iniciado em %s", path)
 }
 
 func ownMACAddresses() ([]string, error) {
