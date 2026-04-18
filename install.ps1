@@ -17,21 +17,19 @@ if (-not (Test-Path $InstallDir)) {
   New-Item -ItemType Directory -Path $InstallDir | Out-Null
 }
 
-# Baixar binário pré-compilado
-$ReleaseUrl = "https://github.com/andre-valadares/deskpilot-agent/releases/latest/download/deskpilot-agent_windows_amd64.zip"
-if ($ReleaseUrl) {
-  Invoke-WebRequest -Uri $ReleaseUrl -OutFile $BinaryPath
-} else {
-  # Compilar da fonte como fallback
-  $goCmd = Get-Command go -ErrorAction SilentlyContinue
-  if (-not $goCmd) {
-    Write-Error "Go não encontrado. Instale em https://go.dev/dl/ ou aguarde os binários pré-compilados."
-  }
-  $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-  Push-Location $ScriptDir
-  go build -o $BinaryPath .
-  Pop-Location
-}
+# Detectar arquitetura
+$Arch = if ([System.Environment]::Is64BitOperatingSystem) { "amd64" } else { "386" }
+$ZipUrl  = "https://github.com/andre-valadares/deskpilot-agent/releases/latest/download/deskpilot-agent_windows_$Arch.zip"
+$TmpZip  = "$env:TEMP\deskpilot-agent.zip"
+$TmpDir  = "$env:TEMP\deskpilot-agent-extract"
+
+Write-Host "Baixando binário ($Arch)..."
+Invoke-WebRequest -Uri $ZipUrl -OutFile $TmpZip
+
+if (Test-Path $TmpDir) { Remove-Item $TmpDir -Recurse -Force }
+Expand-Archive -Path $TmpZip -DestinationPath $TmpDir
+Copy-Item "$TmpDir\deskpilot-agent.exe" -Destination $BinaryPath -Force
+Remove-Item $TmpZip, $TmpDir -Recurse -Force
 
 # Salvar configuração
 & $BinaryPath --token=$Token --api=$Api --install
