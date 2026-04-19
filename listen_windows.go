@@ -24,11 +24,16 @@ func runWoLListener(macs []string, onWoL func()) {
 	log.Println("listener: raw socket ip4:17 ativo")
 
 	buf := make([]byte, 65536)
+	var pktCount int
 	for {
 		n, addr, err := conn.ReadFrom(buf)
 		if err != nil {
 			log.Printf("erro lendo raw socket: %v", err)
 			continue
+		}
+		pktCount++
+		if pktCount <= 10 {
+			log.Printf("raw: pkt#%d de %s, %d bytes (proto=%d)", pktCount, addr, n, buf[9])
 		}
 		pkt := buf[:n]
 
