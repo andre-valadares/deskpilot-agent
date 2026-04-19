@@ -73,17 +73,23 @@ func runRawLoop(conn net.PacketConn, macs []string, onWoL func()) {
 	defer conn.Close()
 	// SIO_RCVALL entrega pacotes IP completos (com cabeçalho IP)
 	buf := make([]byte, 65536)
+	var pktCount uint64
 	for {
 		n, addr, err := conn.ReadFrom(buf)
 		if err != nil {
 			log.Printf("erro lendo SIO_RCVALL: %v", err)
 			return
 		}
+		pktCount++
 		pkt := buf[:n]
 		if len(pkt) < 20 {
 			continue
 		}
-		if pkt[0]>>4 != 4 || pkt[9] != 17 { // IPv4 + UDP
+		proto := pkt[9]
+		if pktCount <= 5 {
+			log.Printf("SIO_RCVALL pkt#%d de %s, %d bytes, proto=%d", pktCount, addr, n, proto)
+		}
+		if pkt[0]>>4 != 4 || proto != 17 { // IPv4 + UDP
 			continue
 		}
 		ihl := int(pkt[0]&0x0f) * 4
@@ -91,6 +97,7 @@ func runRawLoop(conn net.PacketConn, macs []string, onWoL func()) {
 			continue
 		}
 		dstPort := binary.BigEndian.Uint16(pkt[ihl+2 : ihl+4])
+		log.Printf("SIO_RCVALL UDP de %s, dstPort=%d, payload=%d bytes", addr, dstPort, n-ihl-8)
 		if dstPort != 9 {
 			continue
 		}
