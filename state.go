@@ -7,13 +7,16 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
+
+var httpClient = &http.Client{Timeout: 15 * time.Second}
 
 func reportState(cfg *Config, state string) error {
 	url := cfg.ApiURL + "/api/agent"
 	log.Printf("reportState: POST %s state=%s", url, state)
 	body := fmt.Sprintf(`{"token":%q,"state":%q}`, cfg.Token, state)
-	resp, err := http.Post(url, "application/json", strings.NewReader(body))
+	resp, err := httpClient.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("reportState: %w", err)
 	}
@@ -29,7 +32,7 @@ func reportState(cfg *Config, state string) error {
 func readCommand(cfg *Config) (string, error) {
 	url := cfg.ApiURL + "/api/agent?token=" + cfg.Token
 	log.Printf("readCommand: GET %s", url)
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return "", fmt.Errorf("readCommand: %w", err)
 	}

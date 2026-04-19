@@ -16,6 +16,7 @@ import (
 const sioRcvAll = 0x98000001 // SIO_RCVALL — promiscuous mode, recebe directed broadcast
 
 func runWoLListener(macs []string, onWoL func()) {
+	done := make(chan struct{})
 	var started int
 	for _, ip := range localIPv4s() {
 		conn, err := net.ListenPacket("ip4:0", ip)
@@ -31,11 +32,18 @@ func runWoLListener(macs []string, onWoL func()) {
 
 		log.Printf("listener: SIO_RCVALL ativo em %s (inclui directed broadcast)", ip)
 		started++
-		go runRawLoop(conn, macs, onWoL)
+		go func() {
+			runRawLoop(conn, macs, onWoL)
+			done <- struct{}{}
+		}()
 	}
 
 	if started > 0 {
-		select {} // bloqueia; goroutines acima fazem o trabalho
+		// Bloqueia até que TODAS as goroutines terminem (erro persistente)
+		for i := 0; i < started; i++ {
+			<-done
+		}
+		log.Println("todos os listeners SIO_RCVALL encerraram — caindo no ip4:17 fallback")
 	}
 
 	log.Println("SIO_RCVALL indisponível em todas as interfaces — usando ip4:17 fallback")
@@ -72,8 +80,7 @@ func enableRcvAll(conn net.PacketConn) bool {
 func runRawLoop(conn net.PacketConn, macs []string, onWoL func()) {
 	defer conn.Close()
 	// Go strips the IP header on Windows raw sockets (confirmed via hex dumps).
-	// Layout delivered: [srcPort:2][dstPort:2][len:2][cksum:2][payload...]
-	// We also try the with-IP-header layout as fallback.
+	// Layout: [srcPort:2][dstPort:2][len:2][cksum:2][payload...]
 	buf := make([]byte, 65536)
 	for {
 		n, addr, err := conn.ReadFrom(buf)
@@ -82,52 +89,25 @@ func runRawLoop(conn net.PacketConn, macs []string, onWoL func()) {
 			return
 		}
 		pkt := buf[:n]
-
-		// --- layout sem IP header (comportamento observado no Windows) ---
-		if len(pkt) >= 8+102 {
-			dstPort := binary.BigEndian.Uint16(pkt[2:4])
-			if dstPort == 9 {
-				payload := pkt[8:]
-				log.Printf("SIO_RCVALL candidato WoL (sem IP header) de %s, %d bytes payload", addr, len(payload))
-				mac := extractMACFromWoL(payload)
-				if mac == "" {
-					log.Printf("UDP:9 de %s — não é magic packet válido", addr)
-					continue
-				}
-				if !containsMAC(macs, mac) {
-					log.Printf("WoL de %s ignorado — MAC %s não pertence a este host", addr, mac)
-					continue
-				}
-				log.Printf("WoL recebido de %s para %s", addr, mac)
-				onWoL()
-				continue
-			}
+		if len(pkt) < 8+102 {
+			continue
 		}
-
-		// --- layout com IP header (fallback) ---
-		if len(pkt) >= 20 && pkt[0]>>4 == 4 && pkt[9] == 17 {
-			ihl := int(pkt[0]&0x0f) * 4
-			if len(pkt) < ihl+8+102 {
-				continue
-			}
-			dstPort := binary.BigEndian.Uint16(pkt[ihl+2 : ihl+4])
-			if dstPort != 9 {
-				continue
-			}
-			payload := pkt[ihl+8:]
-			log.Printf("SIO_RCVALL candidato WoL (com IP header) de %s, %d bytes payload", addr, len(payload))
-			mac := extractMACFromWoL(payload)
-			if mac == "" {
-				log.Printf("UDP:9 de %s — não é magic packet válido", addr)
-				continue
-			}
-			if !containsMAC(macs, mac) {
-				log.Printf("WoL de %s ignorado — MAC %s não pertence a este host", addr, mac)
-				continue
-			}
-			log.Printf("WoL recebido de %s para %s", addr, mac)
-			onWoL()
+		if binary.BigEndian.Uint16(pkt[2:4]) != 9 {
+			continue
 		}
+		payload := pkt[8:]
+		log.Printf("SIO_RCVALL candidato WoL de %s, %d bytes payload", addr, len(payload))
+		mac := extractMACFromWoL(payload)
+		if mac == "" {
+			log.Printf("UDP:9 de %s — não é magic packet válido", addr)
+			continue
+		}
+		if !containsMAC(macs, mac) {
+			log.Printf("WoL de %s ignorado — MAC %s não pertence a este host", addr, mac)
+			continue
+		}
+		log.Printf("WoL recebido de %s para %s", addr, mac)
+		onWoL()
 	}
 }
 

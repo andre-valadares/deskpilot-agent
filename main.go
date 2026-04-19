@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 )
 
@@ -68,8 +69,16 @@ func main() {
 		os.Exit(0)
 	}()
 
+	var processing atomic.Bool
 	runWoLListener(macs, func() {
-		go handleWoL(cfg)
+		if !processing.CompareAndSwap(false, true) {
+			log.Println("WoL ignorado — processamento já em andamento")
+			return
+		}
+		go func() {
+			defer processing.Store(false)
+			handleWoL(cfg)
+		}()
 	})
 }
 
