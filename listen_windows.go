@@ -5,7 +5,6 @@ package main
 import (
 	"context"
 	"encoding/binary"
-	"encoding/hex"
 	"log"
 	"net"
 	"syscall"
@@ -72,57 +71,63 @@ func enableRcvAll(conn net.PacketConn) bool {
 
 func runRawLoop(conn net.PacketConn, macs []string, onWoL func()) {
 	defer conn.Close()
-	// SIO_RCVALL entrega pacotes IP completos (com cabeçalho IP)
+	// Go strips the IP header on Windows raw sockets (confirmed via hex dumps).
+	// Layout delivered: [srcPort:2][dstPort:2][len:2][cksum:2][payload...]
+	// We also try the with-IP-header layout as fallback.
 	buf := make([]byte, 65536)
-	var pktCount uint64
 	for {
 		n, addr, err := conn.ReadFrom(buf)
 		if err != nil {
 			log.Printf("erro lendo SIO_RCVALL: %v", err)
 			return
 		}
-		pktCount++
 		pkt := buf[:n]
-		if len(pkt) < 20 {
-			continue
-		}
-		proto := pkt[9]
-		if pktCount <= 5 {
-			dump := pkt
-			if len(dump) > 32 {
-				dump = dump[:32]
+
+		// --- layout sem IP header (comportamento observado no Windows) ---
+		if len(pkt) >= 8+102 {
+			dstPort := binary.BigEndian.Uint16(pkt[2:4])
+			if dstPort == 9 {
+				payload := pkt[8:]
+				log.Printf("SIO_RCVALL candidato WoL (sem IP header) de %s, %d bytes payload", addr, len(payload))
+				mac := extractMACFromWoL(payload)
+				if mac == "" {
+					log.Printf("UDP:9 de %s — não é magic packet válido", addr)
+					continue
+				}
+				if !containsMAC(macs, mac) {
+					log.Printf("WoL de %s ignorado — MAC %s não pertence a este host", addr, mac)
+					continue
+				}
+				log.Printf("WoL recebido de %s para %s", addr, mac)
+				onWoL()
+				continue
 			}
-			log.Printf("SIO_RCVALL pkt#%d de %s, %d bytes, proto=%d, hex=%s",
-				pktCount, addr, n, proto, hex.EncodeToString(dump))
 		}
-		if pkt[0]>>4 != 4 || proto != 17 { // IPv4 + UDP
-			continue
+
+		// --- layout com IP header (fallback) ---
+		if len(pkt) >= 20 && pkt[0]>>4 == 4 && pkt[9] == 17 {
+			ihl := int(pkt[0]&0x0f) * 4
+			if len(pkt) < ihl+8+102 {
+				continue
+			}
+			dstPort := binary.BigEndian.Uint16(pkt[ihl+2 : ihl+4])
+			if dstPort != 9 {
+				continue
+			}
+			payload := pkt[ihl+8:]
+			log.Printf("SIO_RCVALL candidato WoL (com IP header) de %s, %d bytes payload", addr, len(payload))
+			mac := extractMACFromWoL(payload)
+			if mac == "" {
+				log.Printf("UDP:9 de %s — não é magic packet válido", addr)
+				continue
+			}
+			if !containsMAC(macs, mac) {
+				log.Printf("WoL de %s ignorado — MAC %s não pertence a este host", addr, mac)
+				continue
+			}
+			log.Printf("WoL recebido de %s para %s", addr, mac)
+			onWoL()
 		}
-		ihl := int(pkt[0]&0x0f) * 4
-		if len(pkt) < ihl+8 {
-			continue
-		}
-		dstPort := binary.BigEndian.Uint16(pkt[ihl+2 : ihl+4])
-		log.Printf("SIO_RCVALL UDP de %s, dstPort=%d, payload=%d bytes", addr, dstPort, n-ihl-8)
-		if dstPort != 9 {
-			continue
-		}
-		payload := pkt[ihl+8:]
-		if len(payload) < 102 {
-			log.Printf("pacote UDP:9 de %s ignorado — payload %d < 102 bytes", addr, len(payload))
-			continue
-		}
-		mac := extractMACFromWoL(payload)
-		if mac == "" {
-			log.Printf("pacote UDP:9 de %s ignorado — não é magic packet válido", addr)
-			continue
-		}
-		if !containsMAC(macs, mac) {
-			log.Printf("WoL de %s ignorado — MAC alvo %s não pertence a este host", addr, mac)
-			continue
-		}
-		log.Printf("WoL recebido de %s para %s", addr, mac)
-		onWoL()
 	}
 }
 
