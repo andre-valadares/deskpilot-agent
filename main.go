@@ -68,7 +68,7 @@ func main() {
 		os.Exit(0)
 	}()
 
-	conn, err := net.ListenPacket("udp4", ":9")
+	conn, err := listenWoL()
 	if err != nil {
 		log.Fatalf("erro ao escutar UDP:9: %v — execute como root/administrador", err)
 	}
