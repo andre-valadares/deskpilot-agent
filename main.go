@@ -68,36 +68,9 @@ func main() {
 		os.Exit(0)
 	}()
 
-	conn, err := listenWoL()
-	if err != nil {
-		log.Fatalf("erro ao escutar UDP:9: %v — execute como root/administrador", err)
-	}
-	defer conn.Close()
-	log.Println("aguardando pacotes WoL na porta 9...")
-
-	buf := make([]byte, 102)
-	for {
-		n, addr, err := conn.ReadFrom(buf)
-		if err != nil {
-			log.Printf("erro lendo UDP: %v", err)
-			continue
-		}
-		if n < 102 {
-			log.Printf("pacote UDP de %s ignorado — tamanho %d < 102 bytes", addr, n)
-			continue
-		}
-		mac := extractMACFromWoL(buf[:n])
-		if mac == "" {
-			log.Printf("pacote UDP de %s ignorado — não é magic packet válido", addr)
-			continue
-		}
-		if !containsMAC(macs, mac) {
-			log.Printf("WoL de %s ignorado — MAC alvo %s não pertence a este host", addr, mac)
-			continue
-		}
-		log.Printf("WoL recebido de %s para %s", addr, mac)
+	runWoLListener(macs, func() {
 		go handleWoL(cfg)
-	}
+	})
 }
 
 func handleWoL(cfg *Config) {
