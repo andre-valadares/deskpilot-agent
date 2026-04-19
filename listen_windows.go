@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"log"
 	"net"
 	"syscall"
@@ -87,7 +88,12 @@ func runRawLoop(conn net.PacketConn, macs []string, onWoL func()) {
 		}
 		proto := pkt[9]
 		if pktCount <= 5 {
-			log.Printf("SIO_RCVALL pkt#%d de %s, %d bytes, proto=%d", pktCount, addr, n, proto)
+			dump := pkt
+			if len(dump) > 32 {
+				dump = dump[:32]
+			}
+			log.Printf("SIO_RCVALL pkt#%d de %s, %d bytes, proto=%d, hex=%s",
+				pktCount, addr, n, proto, hex.EncodeToString(dump))
 		}
 		if pkt[0]>>4 != 4 || proto != 17 { // IPv4 + UDP
 			continue
