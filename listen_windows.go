@@ -16,7 +16,7 @@ import (
 const sioRcvAll = 0x98000001 // SIO_RCVALL — promiscuous mode, recebe directed broadcast
 
 func runWoLListener(macs []string, onWoL func()) {
-	// Tenta SIO_RCVALL em cada interface não-loopback até uma aceitar
+	var started int
 	for _, ip := range localIPv4s() {
 		conn, err := net.ListenPacket("ip4:0", ip)
 		if err != nil {
@@ -24,15 +24,18 @@ func runWoLListener(macs []string, onWoL func()) {
 			continue
 		}
 
-		// SIO_RCVALL deve ser chamado após o bind
 		if ok := enableRcvAll(conn); !ok {
 			conn.Close()
 			continue
 		}
 
 		log.Printf("listener: SIO_RCVALL ativo em %s (inclui directed broadcast)", ip)
-		runRawLoop(conn, macs, onWoL)
-		return
+		started++
+		go runRawLoop(conn, macs, onWoL)
+	}
+
+	if started > 0 {
+		select {} // bloqueia; goroutines acima fazem o trabalho
 	}
 
 	log.Println("SIO_RCVALL indisponível em todas as interfaces — usando ip4:17 fallback")
@@ -186,7 +189,9 @@ func localIPv4s() []string {
 	ifaces, _ := net.Interfaces()
 	var ips []string
 	for _, iface := range ifaces {
-		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+		if iface.Flags&net.FlagLoopback != 0 ||
+			iface.Flags&net.FlagUp == 0 ||
+			iface.Flags&net.FlagBroadcast == 0 {
 			continue
 		}
 		addrs, _ := iface.Addrs()
