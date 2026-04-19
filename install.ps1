@@ -1,4 +1,3 @@
-#Requires -RunAsAdministrator
 param(
   [Parameter(Mandatory)][string]$Token,
   [Parameter(Mandatory)][string]$Api,
@@ -6,6 +5,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# Auto-eleva via UAC se não estiver rodando como admin
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+  $argList = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"", "-Token", "`"$Token`"", "-Api", "`"$Api`"")
+  if ($FileLog) { $argList += "-FileLog" }
+  Start-Process PowerShell -Verb RunAs -ArgumentList $argList
+  exit
+}
 $BinaryName  = "deskpilot-agent.exe"
 $InstallDir  = "$env:ProgramFiles\DeskPilot"
 $BinaryPath  = "$InstallDir\$BinaryName"
