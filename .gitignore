@@ -1,0 +1,6 @@
+*.exe
+deskpilot-agent
+dist/
+
+# macOS
+.DS_Store
