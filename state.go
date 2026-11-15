@@ -15,7 +15,10 @@ var httpClient = &http.Client{Timeout: 15 * time.Second}
 func reportState(cfg *Config, state string) error {
 	url := cfg.ApiURL + "/api/agent"
 	log.Printf("reportState: POST %s state=%s", url, state)
-	body := fmt.Sprintf(`{"token":%q,"state":%q}`, cfg.Token, state)
+	// heartbeatSec declara que este agente envia sinais de vida periódicos.
+	// O servidor só aplica a regra "sem sinal em 2x o intervalo → OFF" para
+	// agentes que declaram o campo — agentes antigos mantêm o comportamento atual.
+	body := fmt.Sprintf(`{"token":%q,"state":%q,"heartbeatSec":%d}`, cfg.Token, state, int(heartbeatInterval.Seconds()))
 	resp, err := httpClient.Post(url, "application/json", strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("reportState: %w", err)

@@ -54,16 +54,25 @@ func main() {
 	}
 	log.Printf("MACs monitorados: %v", macs)
 
+	// true a partir do início do desligamento: pausa o heartbeat para que um
+	// ON atrasado nunca sobrescreva o OFF já reportado.
+	var shuttingDown atomic.Bool
+
+	hb := newHeartbeat(func() error { return reportState(cfg, "ON") }, &shuttingDown)
 	if err := reportState(cfg, "ON"); err != nil {
 		log.Printf("aviso: reportState ON falhou: %v", err)
+		hb.scheduleAfter(false)
 	} else {
 		log.Println("reportState ON: OK")
+		hb.scheduleAfter(true)
 	}
+	go hb.run()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGTERM, syscall.SIGINT)
 	go func() {
 		<-sigs
+		shuttingDown.Store(true)
 		log.Println("sinal recebido — reportando OFF")
 		_ = reportState(cfg, "OFF")
 		os.Exit(0)
@@ -77,12 +86,12 @@ func main() {
 		}
 		go func() {
 			defer processing.Store(false)
-			handleWoL(cfg)
+			handleWoL(cfg, &shuttingDown)
 		}()
 	})
 }
 
-func handleWoL(cfg *Config) {
+func handleWoL(cfg *Config, shuttingDown *atomic.Bool) {
 	cmd, err := readCommand(cfg)
 	if err != nil {
 		log.Printf("erro ao ler comando: %v", err)
@@ -94,20 +103,35 @@ func handleWoL(cfg *Config) {
 	case "":
 		log.Println("nenhum comando pendente — WoL ignorado")
 	case "TurnOff":
-		log.Println("executando shutdown...")
-		if err := shutdown(); err != nil {
-			log.Printf("erro no shutdown: %v", err)
-			return
-		}
-		log.Println("shutdown iniciado com sucesso")
-		if err := reportState(cfg, "OFF"); err != nil {
-			log.Printf("erro ao reportar OFF: %v", err)
-		} else {
-			log.Println("reportState OFF: OK")
-		}
+		executeTurnOff(func(state string) error { return reportState(cfg, state) }, shutdown, shuttingDown)
 	default:
 		log.Printf("comando desconhecido %q — ignorado", cmd)
 	}
+}
+
+// executeTurnOff reporta OFF ANTES de desligar: depois do `shutdown /t 0` a
+// rede pode cair a qualquer momento e o reporte se perderia. Se o reporte
+// falhar, desliga mesmo assim. Se o shutdown falhar, o PC continua ligado,
+// então o estado volta para ON e o heartbeat é retomado.
+func executeTurnOff(report func(state string) error, doShutdown func() error, shuttingDown *atomic.Bool) {
+	shuttingDown.Store(true)
+
+	if err := report("OFF"); err != nil {
+		log.Printf("erro ao reportar OFF (desligando mesmo assim): %v", err)
+	} else {
+		log.Println("reportState OFF: OK")
+	}
+
+	log.Println("executando shutdown...")
+	if err := doShutdown(); err != nil {
+		log.Printf("erro no shutdown: %v — revertendo estado para ON", err)
+		shuttingDown.Store(false)
+		if err := report("ON"); err != nil {
+			log.Printf("erro ao reverter estado para ON: %v", err)
+		}
+		return
+	}
+	log.Println("shutdown iniciado com sucesso")
 }
 
 func shutdown() error {
